@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Safety KPI Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Noto Sans Thai', 'sans-serif'] } } }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f4f6; }
+        .card { transition: transform 0.2s; }
+        .card:hover { transform: translateY(-2px); }
+        .modal-bg { background: rgba(0,0,0,0.5); }
+        
+        @media print {
+            @page { size: A4; margin: 8mm; }
+            body { background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 9px; line-height: 1.2; }
+            .no-print { display: none !important; }
+            .print-header { display: block !important; margin-bottom: 5px !important; padding-bottom: 5px !important; }
+            .dashboard-container { max-width: 100% !important; padding: 0 !important; }
+            .mb-8 { margin-bottom: 8px !important; }
+            .kpi-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 5px !important; margin-bottom: 8px !important; }
+            .kpi-grid > div { padding: 8px !important; }
+            .kpi-grid h2 { font-size: 16px !important; margin-top: 2px !important; }
+            .kpi-grid p { font-size: 8px !important; }
+            .chart-row-1 { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; margin-bottom: 8px !important; }
+            .card { padding: 8px !important; box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+            .card h3 { font-size: 10px !important; margin-bottom: 0 !important; font-weight: 600; }
+            .chart-container { height: 130px !important; }
+            table { border-collapse: collapse; width: 100% !important; font-size: 7px !important; }
+            th, td { border: 1px solid #d1d5db !important; padding: 2px 4px !important; }
+            thead { background-color: #f3f4f6 !important; }
+            #tableBody tr:nth-child(n+6) { display: none; }
+        }
+    </style>
+</head>
+<body class="font-sans text-gray-800 p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto dashboard-container">
+        
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 no-print">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">🛡️ รายงาน KPI ด้านความปลอดภัย (สำหรับผู้บริหาร)</h1>
+                <p class="text-gray-500 mt-1">Safety Executive Dashboard</p>
+            </div>
+            <div class="mt-4 md:mt-0 flex flex-col gap-2 items-end">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-500 font-medium">ชั่วโมงทำงานรวม (Man-Hours):</span>
+                    <input type="number" id="manHoursInput" class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-40 text-right focus:ring-2 focus:ring-blue-500 outline-none" value="200000" onchange="renderDashboard()">
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-500">ข้อมูล ณ วันที่:</span>
+                    <input type="date" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value="2023-10-31">
+                </div>
+            </div>
+        </div>
+
+        <!-- Print Header -->
+        <div class="print-header hidden mb-6 border-b-2 border-gray-800 pb-4">
+            <div class="flex justify-between items-end">
+                <div>
+                    <h1 class="text-lg font-bold text-gray-900">รายงานสรุปตัวชี้วัดด้านความปลอดภัย (Safety KPI Summary)</h1>
+                    <p class="text-xs text-gray-600 mt-1">วันที่พิมพ์: <span id="printDate"></span></p>
+                </div>
+                <div class="text-right">
+                    <h2 class="text-base font-bold text-blue-700">Company Name Co.,Ltd.</h2>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 kpi-grid">
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
+                <p class="text-xs text-gray-500 font-medium">อุบัติเหตุจากการทำงาน</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-work">0</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-indigo-500">
+                <p class="text-xs text-gray-500 font-medium">อุบัติเหตุไม่เกี่ยวข้องการทำงาน</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-nonwork">0</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-amber-500">
+                <p class="text-xs text-gray-500 font-medium">วันหยุดงานรวม</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-days">0 วัน</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-red-500">
+                <p class="text-xs text-gray-500 font-medium">ค่ารักษาพยาบาล</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-medical">0 บาท</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-orange-500">
+                <p class="text-xs text-gray-500 font-medium">ค่าใช้จ่ายกองทุนเงินทดแทน</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-fundcost">0 บาท</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-pink-500">
+                <p class="text-xs text-gray-500 font-medium">ทรัพย์สินเสียหาย</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-property">0 บาท</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-teal-500">
+                <p class="text-xs text-gray-500 font-medium">TRIR</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-trir">0.00</h2>
+            </div>
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-green-500">
+                <p class="text-xs text-gray-500 font-medium">LTIR</p>
+                <h2 class="text-2xl font-bold text-gray-800 mt-1" id="kpi-ltir">0.00</h2>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 chart-row-1">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold mb-4">แนวโน้มอุบัติเหตุรายเดือน (จากการทำงาน vs ไม่เกี่ยวข้อง)</h3>
+                <div class="relative h-64 chart-container"><canvas id="trendChart"></canvas></div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold mb-4">อันดับแผนกที่ประสบอันตราย (สาเหตุการเกิด)</h3>
+                <div class="relative h-64 chart-container"><canvas id="deptChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Data Table & Actions -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                <h3 class="text-lg font-semibold">รายละเอียดอุบัติเหตุและมาตรการป้องกัน</h3>
+                <div class="flex flex-wrap gap-3 justify-center no-print">
+                    <button onclick="openModal()" class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        เพิ่มข้อมูล (+)
+                    </button>
+                    <button onclick="window.print()" class="text-sm bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        พิมพ์รายงาน
+                    </button>
+                    <button id="btnExport" class="text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        ดาวน์โหลด Excel
+                    </button>
+                    <button id="btnImport" class="text-sm bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        อัพโหลด Excel
+                    </button>
+                    <button onclick="resetData()" class="text-sm bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        รีเซ็ตข้อมูล
+                    </button>
+                    <input type="file" id="fileInput" accept=".xlsx, .xls" class="hidden">
+                </div>
+            </div>
+            
+            <div id="uploadStatus" class="hidden mb-4 p-3 rounded-lg text-sm no-print"></div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-500 text-xs">
+                            <th class="p-3 border-b">จัดการ</th>
+                            <th class="p-3 border-b">วันที่</th>
+                            <th class="p-3 border-b">ประเภท</th>
+                            <th class="p-3 border-b">ชื่อ-สกุล</th>
+                            <th class="p-3 border-b">แผนก</th>
+                            <th class="p-3 border-b">สาเหตุ/ลักษณะ</th>
+                            <th class="p-3 border-b text-right">วันหยุด</th>
+                            <th class="p-3 border-b text-right">ค่ารักษา</th>
+                            <th class="p-3 border-b text-right">ค่ากองทุน</th>
+                            <th class="p-3 border-b text-right">ค่าทรัพย์สิน</th>
+                            <th class="p-3 border-b">มาตรการชั่วคราว</th>
+                            <th class="p-3 border-b">มาตรการถาวร</th>
+                            <th class="p-3 border-b">ข้อเสนอแนะ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="text-sm text-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal สำหรับเพิ่ม/แก้ไขข้อมูล -->
+    <div id="formModal" class="fixed inset-0 z-50 hidden flex items-center justify-center modal-bg no-print">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-8 relative">
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h2 id="modalTitle" class="text-2xl font-bold mb-6 text-gray-800">เพิ่มข้อมูลอุบัติเหตุ</h2>
+            <form id="incidentForm" onsubmit="saveData(event)">
+                <input type="hidden" id="editIndex" value="-1">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">วันที่เกิดเหตุ</label>
+                        <input type="date" id="f_date" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">เวลา</label>
+                        <input type="time" id="f_time" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ประเภทอุบัติเหตุ</label>
+                        <select id="f_type" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                            <option value="จากการทำงาน">จากการทำงาน</option>
+                            <option value="ไม่เกี่ยวข้องกับการทำงาน">ไม่เกี่ยวข้องกับการทำงาน</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รหัสพนักงาน</label>
+                        <input type="text" id="f_id" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อ-สกุล</label>
+                        <input type="text" id="f_name" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">แผนก</label>
+                        <input type="text" id="f_dept" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">สิ่งที่ทำให้ประสบอันตราย (สาเหตุ)</label>
+                        <input type="text" id="f_cause" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ลักษณะการประสบอันตราย</label>
+                        <input type="text" id="f_nature" required class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">วันหยุดงาน</label>
+                        <input type="number" id="f_daysOff" min="0" value="0" required class="w-full border border-gray-300 rounded-lg p-2 text-sm text-right">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่ารักษา (บาท)</label>
+                        <input type="number" id="f_medicalCost" min="0" value="0" required class="w-full border border-gray-300 rounded-lg p-2 text-sm text-right">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่ากองทุน (บาท)</label>
+                        <input type="number" id="f_fundCost" min="0" value="0" required class="w-full border border-gray-300 rounded-lg p-2 text-sm text-right">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าทรัพย์สินเสียหาย (บาท)</label>
+                        <input type="number" id="f_propertyDamage" min="0" value="0" required class="w-full border border-gray-300 rounded-lg p-2 text-sm text-right">
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">มาตรการป้องกันแก้ไขชั่วคราว</label>
+                    <textarea id="f_tempAction" rows="2" class="w-full border border-gray-300 rounded-lg p-2 text-sm"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">มาตรการป้องกันแก้ไขถาวร</label>
+                    <textarea id="f_permAction" rows="2" class="w-full border border-gray-300 rounded-lg p-2 text-sm"></textarea>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ข้อเสนอแนะด้านความปลอดภัย</label>
+                    <textarea id="f_suggestion" rows="2" class="w-full border border-gray-300 rounded-lg p-2 text-sm"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="closeModal()" class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">ยกเลิก</button>
+                    <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">บันทึกข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('printDate').innerText = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        const defaultIncidents = [
+            { date: '2023-10-02', time: '09:30', id: 'EMP-001', name: 'สมชาย ใจดี', dept: 'ผลิต', type: 'จากการทำงาน', cause: 'เครื่องจักร', nature: 'หนีบ,ดึง', daysOff: 3, medicalCost: 1500, fundCost: 5000, propertyDamage: 0, tempAction: 'ล็อคเครื่องจักรชั่วคราว', permAction: 'ติดตั้งเซ็นเซอร์หยุดอัตโนมัติ', suggestion: 'อบรม LO-TO ให้พนักงานซ้ำ' },
+            { date: '2023-10-05', time: '14:15', id: 'EMP-025', name: 'สมหญิง รักเรียน', dept: 'คลัง', type: 'ไม่เกี่ยวข้องกับการทำงาน', cause: 'สะดุด', nature: 'กระแทก,ชน', daysOff: 0, medicalCost: 200, fundCost: 0, propertyDamage: 0, tempAction: 'ทำความสะอาดพื้น', permAction: 'ติดพื้นผิวกันลื่น', suggestion: 'ตรวจสอบพื้นที่ทำงานสม่ำเสมอ' },
+            { date: '2023-10-12', time: '08:20', id: 'EMP-015', name: 'อนุชา เร็วมือ', dept: 'ผลิต', type: 'จากการทำงาน', cause: 'เครื่องมือ', nature: 'ตัด,บาด', daysOff: 2, medicalCost: 3000, fundCost: 2500, propertyDamage: 500, tempAction: 'เปลี่ยนใบมีดใหม่', permAction: 'ใช้เครื่องมือที่มีระบบป้องกันอัตโนมัติ', suggestion: 'ตรวจสภาพเครื่องมือก่อนใช้งาน' },
+        ];
+
+        let incidents = JSON.parse(localStorage.getItem('safetyKpiData')) || defaultIncidents;
+
+        const headerMap = {
+            date: '1. วันที่', time: '2. เวลา', id: '3. เลขประจำตัว', name: '4. ชื่อนามสกุล',
+            dept: '5. ฝ่าย/แผนก', type: '6. ประเภทอุบัติเหตุ', cause: '7. สิ่งที่ทำให้ประสบอันตราย',
+            nature: '8. ลักษณะการประสบอันตราย', daysOff: '9. จำนวนวันหยุดงาน', medicalCost: '10. ค่ารักษา (บาท)',
+            fundCost: '11. ค่าใช้จ่ายกองทุน (บาท)', propertyDamage: '12. ทรัพย์สินเสียหาย (บาท)',
+            tempAction: '13. มาตรการชั่วคราว', permAction: '14. มาตรการถาวร', suggestion: '15. ข้อเสนอแนะ'
+        };
+
+        let chartInstances = { trend: null, dept: null };
+
+        function renderDashboard() {
+            const workAcc = incidents.filter(i => i.type === 'จากการทำงาน').length;
+            const nonWorkAcc = incidents.filter(i => i.type === 'ไม่เกี่ยวข้องกับการทำงาน').length;
+            const totalDaysOff = incidents.reduce((s, i) => s + Number(i.daysOff), 0);
+            const totalMedical = incidents.reduce((s, i) => s + Number(i.medicalCost), 0);
+            const totalFund = incidents.reduce((s, i) => s + Number(i.fundCost), 0);
+            const totalProperty = incidents.reduce((s, i) => s + Number(i.propertyDamage), 0);
+            
+            // TRIR & LTIR Calculation
+            const manHours = Number(document.getElementById('manHoursInput').value) || 1;
+            // TRIR = (จำนวนครั้งที่บันทึก / ชั่วโมงทำงาน) * 1,000,000 (สมมติว่าทุกเหตุการณ์คือ Recordable)
+            const trir = (incidents.length / manHours) * 1000000;
+            // LTIR = (จำนวนเหตุการณ์ที่มีวันหยุด / ชั่วโมงทำงาน) * 1,000,000
+            const lostTimeCases = incidents.filter(i => Number(i.daysOff) > 0).length;
+            const ltir = (lostTimeCases / manHours) * 1000000;
+
+            document.getElementById('kpi-work').innerText = workAcc;
+            document.getElementById('kpi-nonwork').innerText = nonWorkAcc;
+            document.getElementById('kpi-days').innerText = `${totalDaysOff} วัน`;
+            document.getElementById('kpi-medical').innerText = `${totalMedical.toLocaleString()} บาท`;
+            document.getElementById('kpi-fundcost').innerText = `${totalFund.toLocaleString()} บาท`;
+            document.getElementById('kpi-property').innerText = `${totalProperty.toLocaleString()} บาท`;
+            document.getElementById('kpi-trir').innerText = trir.toFixed(2);
+            document.getElementById('kpi-ltir').innerText = ltir.toFixed(2);
+
+            // Chart Rendering
+            Chart.defaults.font.family = "'Noto Sans Thai', sans-serif";
+            Object.values(chartInstances).forEach(chart => { if(chart) chart.destroy(); });
+
+            // 1. Trend Chart (จำลองข้อมูลรายเดือน)
+            const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+            chartInstances.trend = new Chart(document.getElementById('trendChart').getContext('2d'), {
+                type: 'line',
+                data: { 
+                    labels: months, 
+                    datasets: [
+                        { label: 'จากการทำงาน', data: [2, 1, 3, 2, 4, 1, 2, 3, 2, workAcc, 0, 0], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, borderWidth: 2 },
+                        { label: 'ไม่เกี่ยวข้องกับการทำงาน', data: [0, 1, 0, 1, 0, 1, 0, 1, 0, nonWorkAcc, 0, 0], borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', fill: true, tension: 0.4, borderWidth: 2 }
+                    ] 
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            // 2. Dept Chart
+            const deptData = incidents.reduce((acc, obj) => { const key = obj.dept || 'ไม่ระบุ'; acc[key] = (acc[key] || 0) + 1; return acc; }, {});
+            chartInstances.dept = new Chart(document.getElementById('deptChart').getContext('2d'), {
+                type: 'bar', data: { labels: Object.keys(deptData), datasets: [{ label: 'จำนวนครั้ง', data: Object.values(deptData), backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'], borderRadius: 6 }] },
+                options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }
+            });
+
+            // Table Rendering
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = ''; 
+            const sortedIncidents = [...incidents].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            sortedIncidents.forEach((item, index) => {
+                // หา index จริงใน Array เดิมเพื่อใช้ในการแก้ไข/ลบ
+                const realIndex = incidents.findIndex(i => i === item);
+                
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-gray-50 transition-colors";
+                
+                let formattedDate = item.date;
+                try { const d = new Date(item.date); if (!isNaN(d.getTime())) formattedDate = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`; } catch(e) {}
+                
+                const typeColor = item.type === 'จากการทำงาน' ? 'text-red-600' : 'text-yellow-600';
+
+                tr.innerHTML = `
+                    <td class="p-2 whitespace-nowrap no-print">
+                        <button onclick="editData(${realIndex})" class="text-blue-500 hover:text-blue-700 mx-1" title="แก้ไข">✏️</button>
+                        <button onclick="deleteData(${realIndex})" class="text-red-500 hover:text-red-700 mx-1" title="ลบ">🗑️</button>
+                    </td>
+                    <td class="p-2 whitespace-nowrap">${formattedDate}</td>
+                    <td class="p-2 font-medium ${typeColor}">${item.type}</td>
+                    <td class="p-2">${item.name}</td>
+                    <td class="p-2">${item.dept}</td>
+                    <td class="p-2 text-xs"><span class="font-medium">${item.cause}</span> / ${item.nature}</td>
+                    <td class="p-2 text-right font-medium">${Number(item.daysOff)}</td>
+                    <td class="p-2 text-right">${Number(item.medicalCost).toLocaleString()}</td>
+                    <td class="p-2 text-right">${Number(item.fundCost).toLocaleString()}</td>
+                    <td class="p-2 text-right">${Number(item.propertyDamage).toLocaleString()}</td>
+                    <td class="p-2 text-xs">${item.tempAction || '-'}</td>
+                    <td class="p-2 text-xs">${item.permAction || '-'}</td>
+                    <td class="p-2 text-xs">${item.suggestion || '-'}</td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        // --- CRUD Functions ---
+        function openModal(index = -1) {
+            document.getElementById('formModal').classList.remove('hidden');
+            document.getElementById('editIndex').value = index;
+            if(index === -1) {
+                document.getElementById('modalTitle').innerText = "เพิ่มข้อมูลอุบัติเหตุ";
+                document.getElementById('incidentForm').reset();
+            } else {
+                document.getElementById('modalTitle').innerText = "แก้ไขข้อมูลอุบัติเหตุ";
+                const item = incidents[index];
+                document.getElementById('f_date').value = item.date;
+                document.getElementById('f_time').value = item.time;
+                document.getElementById('f_type').value = item.type;
+                document.getElementById('f_id').value = item.id;
+                document.getElementById('f_name').value = item.name;
+                document.getElementById('f_dept').value = item.dept;
+                document.getElementById('f_cause').value = item.cause;
+                document.getElementById('f_nature').value = item.nature;
+                document.getElementById('f_daysOff').value = item.daysOff;
+                document.getElementById('f_medicalCost').value = item.medicalCost;
+                document.getElementById('f_fundCost').value = item.fundCost;
+                document.getElementById('f_propertyDamage').value = item.propertyDamage;
+                document.getElementById('f_tempAction').value = item.tempAction || "";
+                document.getElementById('f_permAction').value = item.permAction || "";
+                document.getElementById('f_suggestion').value = item.suggestion || "";
+            }
+        }
+
+        function closeModal() { document.getElementById('formModal').classList.add('hidden'); }
+
+        function saveData(e) {
+            e.preventDefault();
+            const index = parseInt(document.getElementById('editIndex').value);
+            const dataObj = {
+                date: document.getElementById('f_date').value,
+                time: document.getElementById('f_time').value,
+                type: document.getElementById('f_type').value,
+                id: document.getElementById('f_id').value,
+                name: document.getElementById('f_name').value,
+                dept: document.getElementById('f_dept').value,
+                cause: document.getElementById('f_cause').value,
+                nature: document.getElementById('f_nature').value,
+                daysOff: Number(document.getElementById('f_daysOff').value),
+                medicalCost: Number(document.getElementById('f_medicalCost').value),
+                fundCost: Number(document.getElementById('f_fundCost').value),
+                propertyDamage: Number(document.getElementById('f_propertyDamage').value),
+                tempAction: document.getElementById('f_tempAction').value,
+                permAction: document.getElementById('f_permAction').value,
+                suggestion: document.getElementById('f_suggestion').value
+            };
+
+            if(index === -1) {
+                incidents.push(dataObj); // Add
+            } else {
+                incidents[index] = dataObj; // Edit
+            }
+
+            localStorage.setItem('safetyKpiData', JSON.stringify(incidents));
+            closeModal();
+            renderDashboard();
+        }
+
+        function editData(index) { openModal(index); }
+
+        function deleteData(index) {
+            if(confirm("คุณแน่ใจหรือไม่ที่จะลบรายการนี้?")) {
+                incidents.splice(index, 1);
+                localStorage.setItem('safetyKpiData', JSON.stringify(incidents));
+                renderDashboard();
+            }
+        }
+
+        function resetData() {
+            if(confirm('คุณต้องการลบข้อมูลที่อัพโหลด และรีเซ็ตกลับไปใช้ข้อมูลตัวอย่าง ใช่หรือไม่?')) {
+                localStorage.removeItem('safetyKpiData');
+                incidents = [...defaultIncidents];
+                renderDashboard();
+            }
+        }
+
+        // --- Excel Functions ---
+        document.getElementById('btnExport').addEventListener('click', function() {
+            const dataForExcel = incidents.map(item => ({
+                [headerMap.date]: item.date, [headerMap.time]: item.time, [headerMap.id]: item.id,
+                [headerMap.name]: item.name, [headerMap.dept]: item.dept, [headerMap.type]: item.type,
+                [headerMap.cause]: item.cause, [headerMap.nature]: item.nature, [headerMap.daysOff]: Number(item.daysOff), 
+                [headerMap.medicalCost]: Number(item.medicalCost), [headerMap.fundCost]: Number(item.fundCost), 
+                [headerMap.propertyDamage]: Number(item.propertyDamage), [headerMap.tempAction]: item.tempAction || "",
+                [headerMap.permAction]: item.permAction || "", [headerMap.suggestion]: item.suggestion || ""
+            }));
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(dataForExcel);
+            ws['!cols'] = [{wch: 12},{wch: 8},{wch: 12},{wch: 20},{wch: 15},{wch: 20},{wch: 25},{wch: 25},{wch: 15},{wch: 15},{wch: 15},{wch: 15},{wch: 30},{wch: 30},{wch: 30}];
+            XLSX.utils.book_append_sheet(wb, ws, "ข้อมูลอุบัติเหตุ");
+            XLSX.writeFile(wb, "Safety_KPI_Executive_Report.xlsx");
+        });
+
+        document.getElementById('btnImport').addEventListener('click', function() { document.getElementById('fileInput').click(); });
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            const statusEl = document.getElementById('uploadStatus');
+
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: 'yyyy-mm-dd' });
+
+                    if (jsonData.length === 0) throw new Error("ไม่พบข้อมูลในไฟล์ Excel");
+
+                    const reverseHeaderMap = {};
+                    for (let key in headerMap) { reverseHeaderMap[headerMap[key]] = key; }
+
+                    const newIncidents = jsonData.map(row => {
+                        let obj = {};
+                        for (let headerInExcel in row) {
+                            let internalKey = reverseHeaderMap[headerInExcel];
+                            if (internalKey) {
+                                let val = row[headerInExcel];
+                                if (['daysOff', 'medicalCost', 'fundCost', 'propertyDamage'].includes(internalKey)) val = Number(val) || 0;
+                                obj[internalKey] = val;
+                            }
+                        }
+                        return obj;
+                    });
+
+                    incidents = newIncidents;
+                    localStorage.setItem('safetyKpiData', JSON.stringify(incidents));
+                    renderDashboard();
+
+                    statusEl.className = "mb-4 p-3 rounded-lg text-sm bg-green-100 text-green-800 no-print";
+                    statusEl.innerText = `✅ อัพโหลดสำเร็จ! อัปเดตข้อมูลจำนวน ${newIncidents.length} รายการ`;
+                    statusEl.classList.remove('hidden');
+                    setTimeout(() => statusEl.classList.add('hidden'), 4000);
+
+                } catch (error) {
+                    statusEl.className = "mb-4 p-3 rounded-lg text-sm bg-red-100 text-red-800 no-print";
+                    statusEl.innerText = `❌ เกิดข้อผิดพลาด: ${error.message}`;
+                    statusEl.classList.remove('hidden');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            e.target.value = '';
+        });
+
+        renderDashboard();
+    </script>
+</body>
+</html>
